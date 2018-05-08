@@ -1,0 +1,137 @@
+package acmr.excel.pojo;
+
+import java.io.Serializable;
+import java.util.HashMap;
+
+import java.util.Map;
+
+import acmr.excel.ExcelException;
+import acmr.util.IKeyible;
+
+/**
+ * 
+ * excel列对象
+ * 
+ * @author zengqu
+ * 
+ */
+public class ExcelColumn implements IKeyible, Cloneable, Serializable {
+
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+
+	private int width; // 为网页宽度， poi宽度为网页宽度*40 列宽度，为实际的宽度*256+160
+						// ，如果实际宽度少于1，则为*416
+
+	private String code;// 列唯一编号
+
+	private boolean columnhidden;
+
+	private Map<String, String> exps; // 扩展属性
+
+	private boolean inlist;// 是否已经放到队列中了，如果放在队列中了就不能再修改code
+
+	public ExcelColumn() {
+		exps = new HashMap<String, String>();
+		code = "-1";
+		// width = 2035;
+		width = 69;
+		inlist = false;
+		columnhidden = false;
+	}
+
+	/**
+	 * 构造函数，默认宽度为 8.38 2035
+	 */
+	public ExcelColumn(String code1) {
+		exps = new HashMap<String, String>();
+		code = code1;
+		// width = 2035;
+		width = 69;
+		inlist = false;
+		columnhidden = false;
+	}
+
+	@Override
+	public ExcelColumn clone() {
+		ExcelColumn o = new ExcelColumn(this.code);
+		o.width = this.width;
+		o.inlist = false;
+		o.columnhidden = this.columnhidden;
+		for (String key : this.exps.keySet()) {
+			o.exps.put(key, this.exps.get(key));
+		}
+		return o;
+	}
+
+	/**
+	 * 返回扩展属性
+	 * 
+	 * @return
+	 */
+	public Map<String, String> getExps() {
+		return exps;
+	}
+
+	public void setExps(Map<String, String> exps) {
+		this.exps = exps;
+	}
+
+	/**
+	 * 列宽度，为实际的宽度*256+160 ，如果实际宽度少于1，则为*416
+	 * 
+	 * @return
+	 */
+	public int getWidth() {
+		return width;
+	}
+
+	/**
+	 * 列宽度，为实际的宽度*256+160 ，如果实际宽度少于1，则为*416
+	 * 
+	 * @param width
+	 */
+	public void setWidth(int width) {
+		this.width = width;
+	}
+
+	public String getCode() {
+		return code;
+	}
+
+	public void setCode(String code) throws ExcelException {
+		if (this.inlist) {
+			throw (new ExcelException("已经不能修改编码值了！"));
+		}
+		this.code = code;
+	}
+
+	@Override
+	public String toString() {
+		return "" + width;
+	}
+
+	@Override
+	public String Key() {
+		return code;
+	}
+
+	protected boolean isInlist() {
+		return inlist;
+	}
+
+	protected void setInlist(boolean inlist) {
+		this.inlist = inlist;
+	}
+
+	public boolean isColumnhidden() {
+		return columnhidden;
+	}
+
+	public void setColumnhidden(boolean columnhidden) {
+		this.columnhidden = columnhidden;
+	}
+
+}

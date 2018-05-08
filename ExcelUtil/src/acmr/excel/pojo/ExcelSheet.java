@@ -1,0 +1,1123 @@
+package acmr.excel.pojo;
+
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.poi.hssf.util.PaneInformation;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.xssf.usermodel.XSSFCell;
+import org.apache.poi.xssf.usermodel.XSSFCellStyle;
+import org.apache.poi.xssf.usermodel.XSSFClientAnchor;
+import org.apache.poi.xssf.usermodel.XSSFComment;
+import org.apache.poi.xssf.usermodel.XSSFRow;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import acmr.excel.ExcelException;
+import acmr.excel.pojo.Constants.CELLTYPE;
+import acmr.util.IKeyible;
+import acmr.util.ListHashMap;
+import acmr.util.PubInfo;
+
+/**
+ * excel工作薄
+ * 
+ * @author zengqu
+ * 
+ */
+public class ExcelSheet implements IKeyible, Cloneable, Serializable {
+	/**
+	 * 
+	 */
+	private static final long serialVersionUID = 1L;
+	private String name; // sheet名称
+	private int hiddenstate; // 隐藏类型
+	private ListHashMap<ExcelColumn> cols; // sheet的列集合
+	private ListHashMap<ExcelRow> rows;// sheet的行集合
+
+	private ExcelSheetFreeze freeze; // 是否有冻结区或者分隔区
+
+	private Map<String, String> exps; // 扩展属性
+
+	private int maxrow;
+	private int maxcol;
+	
+	private boolean isProtect;
+	private String password;
+	private List<ExcelDataValidation> excelDataValidations;
+
+	/**
+	 * 构造函数
+	 */
+	public ExcelSheet() {
+		cols = new ListHashMap<ExcelColumn>();
+		rows = new ListHashMap<ExcelRow>();
+		exps = new HashMap<String, String>();
+		name = "new sheet";
+		freeze = null;
+		maxrow = 0;
+		maxcol = 0;
+	}
+
+	@Override
+	public ExcelSheet clone() {
+		ExcelSheet o = new ExcelSheet();
+		o.name = this.name;
+		o.hiddenstate = this.hiddenstate;
+		for (int i = 0; i < cols.size(); i++) {
+			o.cols.add(this.cols.get(i).clone());
+		}
+		for (int i = 0; i < rows.size(); i++) {
+			o.rows.add(this.rows.get(i).clone());
+			for (int j = 0; j < cols.size(); j++) {
+				int[] s = this.getMergFirstCell(i, j);
+				if (s != null) {
+					o.rows.get(i).getCells().set(j, o.getRows().get(s[0]).getCells().get(s[1]));
+				}
+			}
+		}
+
+		for (String key : this.exps.keySet()) {
+			o.exps.put(key, this.exps.get(key));
+		}
+		o.maxcol = this.maxcol;
+		o.maxrow = this.maxrow;
+		return o;
+	}
+
+	public ExcelSheetFreeze getFreeze() {
+		return freeze;
+	}
+
+	public void setCols(ListHashMap<ExcelColumn> cols) {
+		this.cols = cols;
+	}
+
+	public void setRows(ListHashMap<ExcelRow> rows) {
+		this.rows = rows;
+	}
+
+	public void setFreeze(ExcelSheetFreeze freeze) {
+		this.freeze = freeze;
+	}
+
+	/**
+	 * sheet名称
+	 * 
+	 * @return
+	 */
+	public String getName() {
+		return name;
+	}
+
+	/**
+	 * sheet名称
+	 * 
+	 * @param name
+	 */
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	/**
+	 * 隐藏类型 0 可见， 1 隐藏，2 特别隐藏
+	 * 
+	 * @return
+	 */
+	public int getHiddenstate() {
+		return hiddenstate;
+	}
+
+	/**
+	 * 隐藏类型 0 可见， 1 隐藏，2 特别隐藏
+	 * 
+	 * @param hiddenstate
+	 */
+	public void setHiddenstate(int hiddenstate) {
+		this.hiddenstate = hiddenstate;
+	}
+
+	/**
+	 * 列集合
+	 * 
+	 * @return
+	 */
+	public List<ExcelColumn> getCols() {
+		return cols;
+	}
+
+	/**
+	 * 行集合
+	 * 
+	 * @return
+	 */
+	public List<ExcelRow> getRows() {
+		return rows;
+	}
+
+	/**
+	 * 扩展属性
+	 * 
+	 * @return
+	 */
+	public Map<String, String> getExps() {
+		return exps;
+	}
+
+	public void setExps(Map<String, String> exps) {
+		this.exps = exps;
+	}
+
+	/**
+	 * 新增行
+	 * 
+	 * @return
+	 */
+	public ExcelRow addRow() {
+		ExcelRow row1 = new ExcelRow("" + (++maxrow));
+		fillRow(row1);
+		rows.add(row1);
+		row1.setInlist(true);
+		return row1;
+	}
+
+	public int getMaxrow() {
+		return maxrow;
+	}
+
+	public void setMaxrow(int maxrow) {
+		this.maxrow = maxrow;
+	}
+
+	public int getMaxcol() {
+		return maxcol;
+	}
+
+	public void setMaxcol(int maxcol) {
+		this.maxcol = maxcol;
+	}
+
+	/**
+	 * 取得合并单元格的起点位置
+	 * 
+	 * @param row1
+	 *            行
+	 * @param col1
+	 *            列
+	 * @return 如果不是合并单元格或者内容为空则返回null
+	 */
+	public int[] getMergFirstCell(int row1, int col1) {
+		ExcelCell cell1 = rows.get(row1).getCells().get(col1);
+		if (cell1 == null) {
+			return null;
+		}
+		if (cell1.getRowspan() == 1 && cell1.getColspan() == 1) {
+			return null;
+		}
+		int rowp = row1;
+		int colp = col1;
+		for (int i = row1 - 1; i >= 0; i--) {
+			ExcelCell cell2 = rows.get(i).getCells().get(col1);
+			if (cell2 == cell1) {
+				rowp = i;
+			} else {
+				break;
+			}
+		}
+		for (int i = col1 - 1; i >= 0; i--) {
+			ExcelCell cell2 = rows.get(rowp).getCells().get(i);
+			if (cell2 == cell1) {
+				colp = i;
+			} else {
+				break;
+			}
+		}
+		return new int[] { rowp, colp };
+	}
+
+	/**
+	 * 检查是否是合并的单元格的起点位置
+	 * 
+	 * @param row1
+	 *            行位置
+	 * @param col1
+	 *            列位置
+	 * @return 不是起点，或者不是合并单元格，或者内容为null都返回false
+	 */
+	public boolean checkisMegFirstCell(int row1, int col1) {
+		int[] dd = this.getMergFirstCell(row1, col1);
+		if (dd == null) {
+			return false;
+		}
+		if (dd[0] == row1 && dd[1] == col1) {
+			return true;
+		}
+		return false;
+
+	}
+
+	/**
+	 * 插入行，对合并的单元格进行了处理，同excel操作
+	 * 
+	 * @param poscode
+	 *            位置编号
+	 * @throws ExcelException
+	 */
+	public void insertRow(String poscode) throws ExcelException {
+		insertRow(rows.getMaps().get(poscode));
+	}
+
+	/**
+	 * 插入行，对合并的单元格进行了处理，同excel操作
+	 * 
+	 * @param index
+	 *            位置
+	 * @throws ExcelException
+	 */
+	public void insertRow(int index) {
+		ExcelRow row1 = new ExcelRow("" + (++maxrow));
+		fillRow(row1);
+		if (index > 0) {
+			for (int i = 0; i < cols.size(); i++) {
+				ExcelCell cell1 = rows.get(index - 1).getCells().get(i);
+				boolean ifrowspan = false;
+				if (cell1 != null && index > 0 && cell1 == rows.get(index).getCells().get(i)) {
+					ifrowspan = true;
+				}
+				if (ifrowspan) {// 当前节点跨行
+					row1.getCells().set(i, cell1);// 复制节点;
+					if (i == 0 || cell1 != row1.getCells().get(i - 1)) { // 增加跨越一行,保证列列合拼的单元只增加一次
+						cell1.setRowspan(cell1.getRowspan() + 1);
+					}
+				} else {
+					if (cell1 != null) {
+						ExcelCell cell2 = cell1.clone();
+						cell2.setRowspan(1);
+						cell2.setColspan(1);
+						cell2.setCellValue("");
+						row1.getCells().set(i, cell2);
+					}
+				}
+
+			}
+		}
+		if (index > 0) {
+			row1.setHeight(rows.get(index - 1).getHeight());
+		}
+		++maxrow;
+		rows.add(index, row1);
+		row1.setInlist(true);
+	}
+
+	/**
+	 * 删除列，规则基本同excel的操作
+	 * 
+	 * @param poscode
+	 *            位置
+	 */
+	public void delRow(String poscode) {
+		delRow(rows.getMaps().get(poscode));
+	}
+
+	/**
+	 * 删除列，规则基本同excel的操作
+	 * 
+	 * @param index
+	 *            位置
+	 */
+	public void delRow(int index) {
+		List<ExcelCell> list1 = new ArrayList<ExcelCell>();
+		ExcelRow row1 = rows.get(index);
+		for (int i = 0; i < cols.size(); i++) {
+			ExcelCell cell1 = row1.getCells().get(i);
+			if (cell1 != null && !list1.contains(cell1)) {
+				boolean ifrowspan = false;
+				if (index > 0 && cell1 == rows.get(index - 1).getCells().get(i)) { // 往上跨行
+					ifrowspan = true;
+				}
+				if (index < (rows.size() - 1) && cell1 == rows.get(index + 1).getCells().get(i)) {// 往下跨行
+					ifrowspan = true;
+				}
+				if (ifrowspan) {
+					cell1.setRowspan(cell1.getRowspan() - 1);
+					list1.add(cell1);
+				}
+			}
+		}
+		rows.remove(index);
+		row1.setInlist(false);
+	}
+
+	/**
+	 * 填充行，保证每行的列数一致
+	 * 
+	 * @param r1
+	 */
+	private void fillRow(ExcelRow r1) {
+		for (int i = 0; i < cols.size(); i++) {
+			r1.add(null);
+		}
+	}
+
+	/**
+	 * 增加列
+	 * 
+	 * @param code
+	 *            列编号
+	 * @return
+	 */
+	public ExcelColumn addColumn() {
+		ExcelColumn col1 = new ExcelColumn("" + (++maxcol));
+		this.cols.add(col1);
+		col1.setInlist(true);
+		for (int i = 0; i < rows.size(); i++) {
+			rows.get(i).add(null);
+		}
+		return col1;
+	}
+
+	/**
+	 * 插入新的excel列，方式同excel方式，跨列时自动合并
+	 * 
+	 * @param poscode
+	 *            插入的位置
+	 * @throws ExcelException
+	 */
+	public void insertColumn(String poscode) throws ExcelException {
+		insertColumn(cols.getMaps().get(poscode));
+	}
+
+	/**
+	 * 插入新的excel列，方式同excel方式，跨列时自动合并
+	 * 
+	 * @param index
+	 *            插入的位置
+	 * @throws ExcelException
+	 */
+	public void insertColumn(int index) {
+		ExcelColumn col1 = new ExcelColumn("" + (++maxcol));
+
+		for (int i = 0; i < rows.size(); i++) {
+			ExcelCell cell1 = null;
+			if (index > 0) {
+				cell1 = rows.get(i).getCells().get(index - 1);
+			}
+			boolean ifcolspan = false;
+			if (cell1 != null && index > 0 && cell1 == rows.get(i).getCells().get(index)) {
+				ifcolspan = true;
+			}
+			if (ifcolspan) {
+				rows.get(i).add(index, cell1); // 增加一cell
+				if (i == 0 || cell1 != rows.get(i - 1).getCells().get(index)) {
+					cell1.setColspan(cell1.getColspan() + 1);
+				}
+			} else {
+				rows.get(i).add(index, null); // 增加空cell
+				if (cell1 != null) {
+					ExcelCell cell2 = cell1.clone();
+					cell2.setRowspan(1);
+					cell2.setColspan(1);
+					cell2.setCellValue("");
+					rows.get(i).set(index, cell2);
+				}
+			}
+
+		}
+		if (index > 0) {
+			col1.setWidth(cols.get(index - 1).getWidth());
+		}
+		cols.add(index, col1);
+		col1.setInlist(true);
+	}
+
+	/**
+	 * 删除列，跨合并的列或行处理方式同excel
+	 * 
+	 * @param poscode
+	 *            删除的位置
+	 */
+	public void delColumn(String poscode) {
+		delColumn(cols.getMaps().get(poscode));
+	}
+
+	/**
+	 * 删除列，跨合并的列或行处理方式同excel
+	 * 
+	 * @param index
+	 *            删除的位置
+	 */
+	public void delColumn(int index) {
+
+		List<ExcelCell> list1 = new ArrayList<ExcelCell>();
+		for (int i = 0; i < rows.size(); i++) {
+			ExcelCell cell1 = rows.get(i).getCells().get(index);
+			if (cell1 != null && !list1.contains(cell1)) {
+				boolean ifcolspan = false;
+				if (index > 0 && cell1 == rows.get(i).getCells().get(index - 1)) {// 往前跨列
+					ifcolspan = true;
+				}
+				if (index < (cols.size() - 1) && cell1 == rows.get(i).getCells().get(index + 1)) {// 往后跨列
+					ifcolspan = true;
+				}
+				if (ifcolspan) {// 跨列
+					cell1.setColspan(cell1.getColspan() - 1);
+					list1.add(cell1);
+				}
+			}
+			rows.get(i).getCells().remove(index);
+		}
+		ExcelColumn col1 = cols.get(index);
+		cols.remove(index);
+		col1.setInlist(false);
+	}
+
+	/**
+	 * 计算出合并的最大范围，使用递归算法
+	 * 
+	 * @param reg
+	 * @return
+	 */
+	private int[] getMergedRegion(int[] reg) {
+
+		for (int i = reg[0]; i <= reg[2]; i++) {
+			for (int j = reg[1]; j <= reg[3]; j++) {
+				ExcelCell cell1 = rows.get(i).getCells().get(j);
+				if (cell1 != null) {
+					int[] ff = this.getMergFirstCell(i, j);
+					boolean mark = false;
+					if (ff != null) {
+						if (ff[0] < reg[0]) {
+							reg[0] = ff[0];
+							mark = true;
+						}
+						if (ff[1] < reg[1]) {
+							reg[1] = ff[1];
+							mark = true;
+						}
+						if (ff[0] + cell1.getRowspan() - 1 > reg[2]) {
+							reg[2] = ff[0] + cell1.getRowspan() - 1;
+							mark = true;
+						}
+						if (ff[1] + cell1.getColspan() - 1 > reg[3]) {
+							reg[3] = ff[1] + cell1.getColspan() - 1;
+							mark = true;
+						}
+					}
+					if (mark) {
+						return getMergedRegion(reg);
+					}
+				}
+			}
+		}
+		return reg;
+	}
+
+	/**
+	 * 合并单元格，能自动把已经合并单元格包括在内
+	 * 
+	 * @param poscoderow
+	 * @param poscodecol
+	 * @param poscoderow1
+	 * @param poscodecol1
+	 */
+	public void MergedRegions(String poscoderow, String poscodecol, String poscoderow1, String poscodecol1) {
+		int frow = rows.getMaps().get(poscoderow);
+		int fcol = cols.getMaps().get(poscodecol);
+		int lrow = rows.getMaps().get(poscoderow1);
+		int lcol = cols.getMaps().get(poscodecol1);
+		MergedRegions(frow, fcol, lrow, lcol);
+	}
+
+	/**
+	 * 合并单元格，能自动把已经合并单元格包括在内
+	 * 
+	 * @param frow
+	 * @param fcol
+	 * @param lrow
+	 * @param lcol
+	 */
+	public void MergedRegions(int frow, int fcol, int lrow, int lcol) {
+		if (frow > lrow) {
+			int row1 = frow;
+			frow = lrow;
+			lrow = row1;
+		}
+		if (fcol > lcol) {
+			int col1 = fcol;
+			fcol = lcol;
+			lcol = col1;
+		}
+		int[] reg = new int[] { frow, fcol, lrow, lcol };
+		reg = this.getMergedRegion(reg);
+		ExcelCell firstcell = this.rows.get(reg[0]).getCells().get(reg[1]);
+		ExcelCell lastcell = this.rows.get(reg[02]).getCells().get(reg[3]);
+		if (firstcell == null) {
+			firstcell = new ExcelCell();
+		}
+		if (lastcell == null) {
+			lastcell = new ExcelCell();
+		}
+		int rowspan = reg[2] - reg[0] + 1;
+		int colspan = reg[3] - reg[1] + 1;
+		firstcell.setRowspan(rowspan);
+		firstcell.setColspan(colspan);
+		boolean mark1 = true;
+		for (int i = reg[0]; i < reg[0] + rowspan; i++) {
+			for (int j = reg[1]; j < reg[1] + colspan; j++) {
+				ExcelCell cell1 = this.rows.get(i).getCells().get(j);
+				if (mark1 && cell1 != null && cell1.getValue() != null && !cell1.getValue().toString().equals("")) {
+					firstcell.setCellstyle(cell1.getCellstyle().clone());
+					firstcell.setValue(cell1.getValue());
+					firstcell.setMemo(cell1.getMemo());
+					firstcell.setText(cell1.getText());
+					firstcell.setType(cell1.getType());
+					mark1 = false;
+				}
+				this.rows.get(i).getCells().set(j, firstcell);
+			}
+		}
+	}
+
+	public void SplitRegions(String poscoderow, String poscodecol, String poscoderow1, String poscodecol1) {
+		int frow = rows.getMaps().get(poscoderow);
+		int fcol = cols.getMaps().get(poscodecol);
+		int lrow = rows.getMaps().get(poscoderow1);
+		int lcol = cols.getMaps().get(poscodecol1);
+		SplitRegions(frow, fcol, lrow, lcol);
+	}
+
+	public void SplitRegions(int frow, int fcol, int lrow, int lcol) {
+		if (frow > lrow) {
+			int row1 = frow;
+			frow = lrow;
+			lrow = row1;
+		}
+		if (fcol > lcol) {
+			int col1 = fcol;
+			fcol = lcol;
+			lcol = col1;
+		}
+		for (int i = frow; i <= lrow; i++) {
+			for (int j = fcol; j <= lcol; j++) {
+				int[] p = this.getMergFirstCell(i, j);
+				if (p != null) {
+					SplitRegion(p);
+				}
+			}
+		}
+	}
+
+	private void SplitRegion(int[] mergfirstcell) {
+		int row = mergfirstcell[0];
+		int col = mergfirstcell[1];
+		ExcelCell cell1 = rows.get(row).getCells().get(col);
+		int lrow = row + cell1.getRowspan();
+		int lcol = col + cell1.getColspan();
+		cell1.setColspan(1);
+		cell1.setRowspan(1);
+		ExcelCell cell2 = cell1.clone();
+		cell2.setText("");
+		cell2.setValue("");
+		cell2.setType(CELLTYPE.STRING);
+		if (cell2.getCellstyle() != null) {
+			cell2.getCellstyle().setDataformat("General");
+		}
+		for (int i = row; i < lrow; i++) {
+			for (int j = col; j < lcol; j++) {
+				if (!(i == row && j == col)) {
+					rows.get(i).getCells().set(j, cell2.clone());
+				}
+			}
+		}
+	}
+
+	/**
+	 * 从poisheet对象加载excelsheet对象
+	 * 
+	 * @param s1
+	 */
+	public void loadSheet(XSSFSheet s1) { // 宽度是excel宽度*256+160 高度为excel高度*20
+		this.name = s1.getSheetName();
+		this.hiddenstate = 0;
+		int sheetindex = s1.getWorkbook().getSheetIndex(s1);
+		if (s1.getWorkbook().isSheetHidden(sheetindex)) {
+			this.hiddenstate = 1;
+		}
+		if (s1.getWorkbook().isSheetVeryHidden(sheetindex)) {
+			this.hiddenstate = 2;
+		}
+		rows.clear();
+		cols.clear();
+		exps.clear();
+		if (s1.getPhysicalNumberOfRows() == 0) {
+			return;
+		}
+		int introw = s1.getLastRowNum() + 1;
+		int intcol = 0;
+		for (int i = 0; i < introw; i++) {
+			XSSFRow dr1 = s1.getRow(i);
+			ExcelRow dr2 = this.addRow();
+			if (dr1 != null) {
+				intcol = Math.max(intcol, s1.getRow(i).getLastCellNum());
+				// dr2.setHeight(dr1.getHeight() );
+				dr2.setHeight(dr1.getHeight() / 18);
+				dr2.setRowhidden(dr1.getZeroHeight());
+			}
+		}
+		for (int i = 0; i < intcol; i++) {
+			// this.addColumn().setWidth(s1.getColumnWidth(i)); // (i-160)/256
+			ExcelColumn col1 = this.addColumn();
+			col1.setWidth(s1.getColumnWidth(i) / 40); // (i-160)/256
+			col1.setColumnhidden(s1.isColumnHidden(i));
+		}
+		for (int i = 0; i < introw; i++) {
+			XSSFRow dr1 = s1.getRow(i);
+			ExcelRow dr2 = rows.get(i);
+			if (dr1 != null) {
+				for (int j = 0; j < intcol; j++) {
+					XSSFCell c1 = dr1.getCell(j);
+					ExcelCell cell1 = getExcelCell(c1);
+					dr2.set(j, cell1);
+				}
+			}
+		}
+		int mcount = s1.getNumMergedRegions();
+		for (int i = 0; i < mcount; i++) {
+			CellRangeAddress m1 = s1.getMergedRegion(i);
+			setMergedCells(m1);
+		}
+		PaneInformation fz = s1.getPaneInformation();
+		if (fz != null) {
+			this.freeze = new ExcelSheetFreeze();
+			this.freeze.setFreeze(fz.isFreezePane());
+			this.freeze.setRow(fz.getHorizontalSplitPosition());
+			this.freeze.setCol(fz.getVerticalSplitPosition());
+			this.freeze.setFirstrow(fz.getHorizontalSplitTopRow());
+			this.freeze.setFirstcol(fz.getVerticalSplitLeftColumn());
+			this.freeze.setActivepan(fz.getActivePane());
+		}
+		// 为了显示字段初始化
+		this.getExps().put("ifUpload", "true");
+	}
+
+	/**
+	 * 从poi对象返回一个excelCell对象 可以返回null
+	 * 
+	 * @param c1
+	 * @return
+	 */
+	public ExcelCell getExcelCell(XSSFCell c1) {
+		if (c1 == null) {
+			return null;
+		}
+		ExcelCell cell1 = new ExcelCell();
+		switch (c1.getCellType()) {
+		case XSSFCell.CELL_TYPE_BLANK:
+			cell1.setValue("");
+			cell1.setType(CELLTYPE.BLANK);
+			cell1.setText("");
+			break;
+		case XSSFCell.CELL_TYPE_BOOLEAN:
+			cell1.setValue(c1.getBooleanCellValue());
+			cell1.setType(CELLTYPE.BOOLEAN);
+			cell1.setText(c1.toString());
+			break;
+		case XSSFCell.CELL_TYPE_ERROR:
+			cell1.setValue(c1.getErrorCellString());
+			cell1.setType(CELLTYPE.ERROR);
+			cell1.setText(c1.toString());
+			break;
+		case XSSFCell.CELL_TYPE_FORMULA:
+			String s = c1.getRawValue();
+			cell1.setText(s);
+			if (PubInfo.isNumber(s)) {
+				cell1.setCellValue(PubInfo.getDouble(s));
+			} else {
+				cell1.setCellValue(s);
+			}
+			break;
+		case XSSFCell.CELL_TYPE_NUMERIC:
+			if (ExcelDateUtil.isCellDateFormatted(c1)) {
+				cell1.setValue(c1.getDateCellValue());
+				cell1.setType(CELLTYPE.DATE);
+				cell1.setText(PubInfo.dateToString(c1.getDateCellValue()));
+			} else {
+				cell1.setValue(c1.getNumericCellValue());
+				cell1.setType(CELLTYPE.NUMERIC);
+				cell1.setText(c1.getRawValue());
+			}
+			break;
+		case Cell.CELL_TYPE_STRING:
+			cell1.setValue(c1.toString());
+			cell1.setType(CELLTYPE.STRING);
+			cell1.setText(c1.toString());
+			break;
+		}
+		cell1.setCellstyle(new ExcelCellStyle(c1.getCellStyle()));
+		if (c1.getCellComment() != null) {
+			cell1.setMemo(c1.getCellComment().getString().getString());
+		}
+		return cell1;
+	}
+
+	/**
+	 * 根据poi的合并信息把sheet对象中单元格合并，需要合并的单元格都指向一个ExcelCell对象，rowspan colspan设置好
+	 * 
+	 * @param mc
+	 */
+	private void setMergedCells(CellRangeAddress mc) {
+		int brow = mc.getFirstRow();
+		int erow = mc.getLastRow();
+		int bcol = mc.getFirstColumn();
+		int ecol = mc.getLastColumn();
+		if (brow >= rows.size()) {
+			brow = rows.size() - 1;
+		}
+		if (bcol >= cols.size()) {
+			bcol = cols.size() - 1;
+		}
+		if (erow >= rows.size()) {
+			erow = rows.size() - 1;
+		}
+		if (ecol >= cols.size()) {
+			ecol = cols.size() - 1;
+		}
+		ExcelCell cell1 = rows.get(brow).getCells().get(bcol);
+		if (cell1 == null) {
+			cell1 = new ExcelCell();
+			rows.get(brow).set(bcol, cell1);
+		}
+		Excelborder topb = null;
+		Excelborder rightb = null;
+		Excelborder leftb = null;
+		Excelborder botmb = null;
+		cell1.setRowspan(erow - brow + 1);
+		cell1.setColspan(ecol - bcol + 1);
+		for (int i = brow; i <= erow; i++) {
+			for (int j = bcol; j <= ecol; j++) {
+				ExcelCell c1 = rows.get(i).getCells().get(j);
+				if (i == brow) { // top
+					setCellBorder(i, j, "top");
+					if (topb == null || (topb.getSort() > 0 && c1.getCellstyle().getTopborder().getSort() == 0)) {
+						topb = c1.getCellstyle().getTopborder().clone();
+					}
+				}
+				if (j == bcol) {// left
+					setCellBorder(i, j, "left");
+					if (leftb == null || (leftb.getSort() > 0 && c1.getCellstyle().getLeftborder().getSort() == 0)) {
+						leftb = c1.getCellstyle().getLeftborder().clone();
+					}
+				}
+				if (j == ecol) {// right
+					setCellBorder(i, j, "right");
+					if (rightb == null || (rightb.getSort() > 0 && c1.getCellstyle().getRightborder().getSort() == 0)) {
+						rightb = c1.getCellstyle().getRightborder().clone();
+					}
+				}
+				if (i == erow) {// bottom
+					setCellBorder(i, j, "bottom");
+					if (botmb == null || (botmb.getSort() > 0 && c1.getCellstyle().getBottomborder().getSort() == 0)) {
+						botmb = c1.getCellstyle().getBottomborder().clone();
+					}
+				}
+				rows.get(i).getCells().set(j, cell1);
+			}
+		}
+		cell1.getCellstyle().setTopborder(topb);
+		cell1.getCellstyle().setLeftborder(leftb);
+		cell1.getCellstyle().setRightborder(rightb);
+		cell1.getCellstyle().setBottomborder(botmb);
+	}
+
+	private void setCellBorder(int i, int j, String pos) {
+		ExcelCell c1 = rows.get(i).getCells().get(j);
+		if (c1 == null) {
+			return;
+		}
+		if (pos.equals("top") && c1.getCellstyle().getTopborder().getSort() > 0) {
+			if (i > 0) {
+				ExcelCell c2 = rows.get(i - 1).getCells().get(j);
+				if (c2 == null) {
+					c2 = new ExcelCell();
+					rows.get(i - 1).getCells().set(j, c2);
+				}
+				if (c2.getColspan() == 1) {
+					c2.getCellstyle().setBottomborder(c1.getCellstyle().getTopborder().clone());
+				}
+			}
+		}
+		if (pos.equals("bottom") && c1.getCellstyle().getBottomborder().getSort() > 0) {
+			if (i < rows.size() - 1) {
+				ExcelCell c2 = rows.get(i + 1).getCells().get(j);
+				if (c2 == null) {
+					c2 = new ExcelCell();
+					rows.get(i + 1).getCells().set(j, c2);
+				}
+				if (c2.getColspan() == 1) {
+					c2.getCellstyle().setTopborder(c1.getCellstyle().getBottomborder().clone());
+				}
+			}
+		}
+		if (pos.equals("left") && c1.getCellstyle().getLeftborder().getSort() > 0) {
+			if (j > 0) {
+				ExcelCell c2 = rows.get(i).getCells().get(j - 1);
+				if (c2 == null) {
+					c2 = new ExcelCell();
+					rows.get(i).getCells().set(j - 1, c2);
+				}
+				if (c2.getRowspan() == 1) {
+					c2.getCellstyle().setRightborder(c1.getCellstyle().getLeftborder().clone());
+				}
+			}
+		}
+		if (pos.equals("right") && c1.getCellstyle().getRightborder().getSort() > 0) {
+			if (j < cols.size() - 1) {
+				ExcelCell c2 = rows.get(i).getCells().get(j + 1);
+				if (c2 == null) {
+					c2 = new ExcelCell();
+					rows.get(i).getCells().set(j + 1, c2);
+				}
+				if (c2.getRowspan() == 1) {
+					c2.getCellstyle().setLeftborder(c1.getCellstyle().getRightborder().clone());
+				}
+			}
+		}
+	}
+
+	/**
+	 * 把sheet内容保存到poi对象中XSSFSheet
+	 * 
+	 * @param sheet
+	 */
+	public void SaveToExcelSheet(XSSFSheet sheet, List<ExcelCellStyle> cells, List<ExcelFont> fonts) {
+		int sindex = sheet.getWorkbook().getSheetIndex(sheet);
+		sheet.getWorkbook().setSheetName(sindex, name);
+		sheet.getWorkbook().setSheetHidden(sindex, hiddenstate);
+		sheet.getWorkbook().isSheetHidden(sindex);
+		for (int i = 0; i < rows.size(); i++) {
+			if (!rows.get(i).isNull()) {
+				XSSFRow dr1 = sheet.createRow(i);
+				for (int j = 0; j < cols.size(); j++) {
+					if (rows.get(i).getCells().get(j) != null) {
+						dr1.createCell(j);
+					}
+				}
+			}
+		}
+		for (int i = 0; i < rows.size(); i++) {
+			XSSFRow row1 = sheet.getRow(i);
+			if (row1 != null) {
+				row1.setHeight((short) (rows.get(i).getHeight() * 18));
+				for (int j = 0; j < cols.size(); j++) {
+					XSSFCell cell1 = row1.getCell(j);
+					ExcelCell c1 = rows.get(i).getCells().get(j);
+					if (c1 != null) {
+						this.setXSSFCell(cell1, c1, cells, fonts);
+					}
+					if (this.checkisMegFirstCell(i, j)) {
+						CellRangeAddress region = new CellRangeAddress(i, i + c1.getRowspan() - 1, j, j + c1.getColspan() - 1);
+						sheet.addMergedRegion(region);
+					}
+				}
+				row1.setZeroHeight(rows.get(i).isRowhidden());
+			}
+		}
+		for (int i = 0; i < cols.size(); i++) {
+			int width1 = cols.get(i).getWidth() * 40;
+			if (width1 > 256 * 255) {
+				width1 = 256 * 255;
+			}
+			sheet.setColumnWidth(i, width1);
+			sheet.setColumnHidden(i, cols.get(i).isColumnhidden());
+		}
+
+		if (this.freeze != null) {
+			if (this.freeze.isFreeze()) {
+				sheet.createFreezePane(this.freeze.getCol(), this.freeze.getRow(), this.freeze.getFirstcol(), this.freeze.getFirstrow());
+			} else {
+				sheet.createSplitPane(this.freeze.getCol(), this.freeze.getRow(), this.freeze.getFirstcol(), this.freeze.getFirstrow(), this.freeze.getActivepan());
+			}
+		}
+
+	}
+
+	/**
+	 * 把单元格内容及样式拷贝到poi对象中
+	 * 
+	 * @param xcell
+	 * @param ecell
+	 * @param fonts
+	 * @param cells
+	 */
+	private void setXSSFCell(XSSFCell xcell, ExcelCell ecell, List<ExcelCellStyle> cells, List<ExcelFont> fonts) {
+		XSSFWorkbook book1 = xcell.getSheet().getWorkbook();
+		switch (ecell.getType()) {
+		case BLANK: // 空白，表示是合并的单元格
+			xcell.setCellType(Cell.CELL_TYPE_BLANK);
+			break;
+		case BOOLEAN: // 表示是bool值
+			xcell.setCellType(Cell.CELL_TYPE_BOOLEAN);
+			xcell.setCellValue((Boolean) ecell.getValue());
+			break;
+		case ERROR: // 错误
+			xcell.setCellType(Cell.CELL_TYPE_ERROR);
+			xcell.setCellErrorValue((Byte) ecell.getValue());
+			break;
+		case FORMULA: // 公式
+			xcell.setCellType(Cell.CELL_TYPE_FORMULA);
+			xcell.setCellFormula(ecell.getText());
+			break;
+		case DATE: // 日期
+			xcell.setCellType(Cell.CELL_TYPE_NUMERIC);
+			xcell.setCellValue((Date) ecell.getValue());
+			break;
+		case NUMERIC: // 数值
+			xcell.setCellType(Cell.CELL_TYPE_NUMERIC);
+			xcell.setCellValue((Double) ecell.getValue());
+			break;
+		case STRING: // 字符
+			xcell.setCellType(Cell.CELL_TYPE_STRING);
+			xcell.setCellValue((String) ecell.getValue());
+			break;
+		}
+
+		XSSFCellStyle s1 = null;
+		int pos = this.findExcelcell(cells, ecell.getCellstyle());
+		if (pos < 0) {
+			s1 = book1.createCellStyle();
+			ecell.getCellstyle().setXSSFCellStyle(s1, book1, fonts);
+			cells.add(ecell.getCellstyle());
+		} else {
+			s1 = book1.getCellStyleAt((short) (pos + 1));
+		}
+		xcell.setCellStyle(s1);
+
+		if (ecell.getMemo() != null && !ecell.getMemo().equals("")) {
+			XSSFClientAnchor anchor = new XSSFClientAnchor();
+			XSSFComment comment = xcell.getSheet().createDrawingPatriarch().createCellComment(anchor);
+			comment.setString(ecell.getMemo());
+			xcell.setCellComment(comment);
+		}
+	}
+
+	private int findExcelcell(List<ExcelCellStyle> cells, ExcelCellStyle cell) {
+		int pos = -1;
+		for (int i = 0; i < cells.size(); i++) {
+			if (cells.get(i).equals(cell)) {
+				pos = i;
+				break;
+			}
+		}
+		return pos;
+	}
+
+	public int getColleft(int index) {
+		if (index < 1) {
+			return 0;
+		}
+		return getColleft(index - 1) + cols.get(index - 1).getWidth() + 1;
+	}
+
+	public int getRowtop(int index) {
+		if (index < 1) {
+			return 0;
+		}
+		return getRowtop(index - 1) + rows.get(index - 1).getHeight() + 1;
+	}
+
+	public void resetRowCode() {
+		try {
+			for (int i = 0; i < rows.size(); i++) {
+				rows.get(i).setInlist(false);
+				rows.get(i).setCode("" + (i + 1));
+				rows.get(i).setInlist(true);
+			}
+		} catch (ExcelException e) {
+			e.printStackTrace();
+		}
+		rows.RecreateMaps();
+	}
+
+	public void resetColCode() {
+		try {
+			for (int i = 0; i < cols.size(); i++) {
+				cols.get(i).setInlist(false);
+				cols.get(i).setCode("" + (i + 1));
+				cols.get(i).setInlist(true);
+			}
+		} catch (ExcelException e) {
+			e.printStackTrace();
+		}
+		cols.RecreateMaps();
+	}
+
+	public void afterJOSN() {
+		List<ExcelCell> cells = new ArrayList<ExcelCell>();
+		for (int i = 0; i < rows.size(); i++) {
+			for (int j = 0; j < cols.size(); j++) {
+				ExcelCell cell1 = rows.get(i).getCells().get(j);
+				if (cell1 != null && (cell1.getRowspan() > 1 || cell1.getColspan() > 1)) {
+					if (!checkInExcelCell(cells, cell1) && this.checkisMegFirstCell(i, j)) {
+						setMergedCells(i, j);
+						cells.add(cell1);
+					}
+				}
+
+			}
+		}
+	}
+
+	private boolean checkInExcelCell(List<ExcelCell> cells, ExcelCell cell1) {
+		for (int i = 0; i < cells.size(); i++) {
+			if (cells.get(i) == cell1) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	private void setMergedCells(int row, int col) {
+		ExcelCell cell1 = rows.get(row).getCells().get(col);
+		for (int i = row; i < row + cell1.getRowspan(); i++) {
+			for (int j = col; j < col + cell1.getColspan(); j++) {
+				rows.get(i).getCells().set(j, cell1);
+			}
+		}
+	}
+
+	@Override
+	public String Key() {
+		return name;
+	}
+
+	public boolean isProtect() {
+		return isProtect;
+	}
+
+	public void setProtect(boolean isProtect) {
+		this.isProtect = isProtect;
+	}
+
+	public String getPassword() {
+		return password;
+	}
+
+	public void setPassword(String password) {
+		this.password = password;
+	}
+
+	public List<ExcelDataValidation> getExcelDataValidations() {
+		return excelDataValidations;
+	}
+
+	public void setExcelDataValidations(List<ExcelDataValidation> excelDataValidations) {
+		this.excelDataValidations = excelDataValidations;
+	}
+	
+	
+}

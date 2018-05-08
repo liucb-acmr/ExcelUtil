@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/acmrUtil"/>
+	<classpathentry exported="true" kind="lib" path="lib/poi-3.10.1-20140818.jar"/>
+	<classpathentry exported="true" kind="lib" path="lib/poi-ooxml-3.10.1-20140818.jar"/>
+	<classpathentry exported="true" kind="lib" path="lib/poi-ooxml-schemas-3.10.1-20140818.jar"/>
+	<classpathentry exported="true" kind="lib" path="lib/xmlbeans-2.6.0.jar"/>
+	<classpathentry combineaccessrules="false" kind="src" path="/MathUtil"/>
+	<classpathentry kind="con" path="org.eclipse.jst.j2ee.internal.module.container"/>
+	<classpathentry kind="output" path="bin"/>
+</classpath>
